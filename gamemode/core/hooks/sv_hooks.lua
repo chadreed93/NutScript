@@ -176,6 +176,12 @@ function GM:EntityTakeDamage(entity, dmgInfo)
 	end
 end
 
+function GM:PrePlayerLoadedChar(client, character, lastChar)
+	-- Remove all skins
+	client:SetBodyGroups("000000000")
+	client:SetSkin(0)
+end
+
 function GM:PlayerLoadedChar(client, character, lastChar)
 	if (lastChar) then
 		local charEnts = lastChar:getVar("charEnts") or {}
@@ -217,6 +223,7 @@ function GM:PlayerLoadedChar(client, character, lastChar)
 			client:notifyLocalized("salary", nut.currency.get(pay))
 		end)
 	end
+
 
 	hook.Run("PlayerLoadout", client)
 end
@@ -486,6 +493,7 @@ function GM:PlayerDisconnected(client)
 			end
 		end
 
+		hook.Run("OnCharDisconnect", client, character)
 		character:save()
 	end
 end
@@ -510,10 +518,6 @@ function GM:InitPostEntity()
 			end
 		end
 	end
-
-	timer.Simple(0.1, function()
-		hook.Run("LoadData")
-	end)
 
 	timer.Simple(2, function()
 		nut.entityDataLoaded = true
@@ -553,7 +557,7 @@ function GM:ScalePlayerDamage(client, hitGroup, dmgInfo)
 end
 
 function GM:GetGameDescription()
-	return "NS - "..(SCHEMA and SCHEMA.name or "Unknown")
+	return ""..(SCHEMA and SCHEMA.name or "Unknown")
 end
 
 function GM:OnPlayerUseBusiness(client, item)
@@ -579,31 +583,30 @@ end
 
 function GM:PlayerCanHearPlayersVoice(listener, speaker)
 	local allowVoice = nut.config.get("allowVoice")
-	if allowVoice then
-		local listener_pos = listener:GetPos()
-		local speaker_pos = speaker:GetPos()
-		local voice_dis = math.Distance(speaker_pos.x, speaker_pos.y, listener_pos.x, listener_pos.y)
-		if voice_dis < 600 then -- Set a config for this if you want - but 600 is good.
-			allowVoice = true
-		else
-			allowVoice = false
-		end	
+	
+	if (!allowVoice) then
+		return false, false
 	end
-	return allowVoice, allowVoice
+	
+	if (listener:GetPos():DistToSqr(speaker:GetPos()) > nut.config.squaredVoiceDistance) then
+		return false, false
+	end
+	
+	return true, true
 end
 
 function GM:OnPhysgunFreeze(weapon, physObj, entity, client)
 	-- Object is already frozen (!?)
 	if (!physObj:IsMoveable()) then return false end
 	if (entity:GetUnFreezable()) then return false end
-	
+
 	physObj:EnableMotion(false)
-	
+
 	-- With the jeep we need to pause all of its physics objects
 	-- to stop it spazzing out and killing the server.
 	if (entity:GetClass() == "prop_vehicle_jeep") then
-		local objects = ent:GetPhysicsObjectCount()
-		
+		local objects = entity:GetPhysicsObjectCount()
+
 		for i = 0, objects - 1 do
 			entity:GetPhysicsObjectNum(i):EnableMotion(false)
 		end
@@ -686,3 +689,17 @@ netstream.Hook("strReq", function(client, time, text)
 		client.nutStrReqs[time] = nil
 	end
 end)
+
+function GM:GetPreferredCarryAngles(entity)
+	if (entity:GetClass() == "nut_item") then
+		local itemTable = entity:getItemTable()
+
+		if (itemTable) then
+			local preferedAngle = itemTable.preferedAngle
+
+			if (preferedAngle) then -- I don't want to return something
+				return preferedAngle
+			end
+		end
+	end
+end

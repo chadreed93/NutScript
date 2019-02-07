@@ -89,9 +89,7 @@ function GM:LoadFonts(font, genericFont)
 
 	-- The more readable font.
 	font = genericFont
-	//-- but not in korea fucker
-	//font = "Malgun Gothic"
-
+	
 	surface.CreateFont("nutCleanTitleFont", {
 		font = font,
 		size = 200,
@@ -149,10 +147,25 @@ function GM:LoadFonts(font, genericFont)
 		italic = true
 	})
 
+	surface.CreateFont("nutChatFontBold", {
+		font = font,
+		size = math.max(ScreenScale(7), 17),
+		extended = true,
+		weight = 800,
+	})
+
 	surface.CreateFont("nutSmallFont", {
 		font = font,
 		size = math.max(ScreenScale(6), 17),
 		extended = true,
+		weight = 500
+	})
+
+	surface.CreateFont("nutItemDescFont", {
+		font = font,
+		size = math.max(ScreenScale(6), 17),
+		extended = true,
+		shadow = true,
 		weight = 500
 	})
 
@@ -162,6 +175,15 @@ function GM:LoadFonts(font, genericFont)
 		extended = true,
 		weight = 800
 	})
+
+	surface.CreateFont("nutItemBoldFont", {
+		font = font,
+		shadow = true,
+		size = math.max(ScreenScale(8), 20),
+		extended = true,
+		weight = 800
+	})
+
 
 	-- Introduction fancy font.
 	font = "Cambria"
@@ -223,43 +245,49 @@ function GM:CalcViewModelView(weapon, viewModel, oldEyePos, oldEyeAngles, eyePos
 		return
 	end
 
-	local client = LocalPlayer()
-	local value = 0
+	local vm_origin, vm_angles = eyePos, eyeAngles
 
-	if (!client:isWepRaised()) then
-		value = 100
+	--Intervention of Nutscript Holster/Raise Angle/Positions. 
+	do 
+		local client = LocalPlayer()
+		local value = 0
+
+		if (!client:isWepRaised()) then
+			value = 100
+		end
+
+		local fraction = (client.nutRaisedFrac or 0) / 100
+		local rotation = weapon.LowerAngles or LOWERED_ANGLES
+		
+		if (NUT_CVAR_LOWER2:GetBool() and weapon.LowerAngles2) then
+			rotation = weapon.LowerAngles2
+		end
+		
+		vm_angles:RotateAroundAxis(vm_angles:Up(), rotation.p * fraction)
+		vm_angles:RotateAroundAxis(vm_angles:Forward(), rotation.y * fraction)
+		vm_angles:RotateAroundAxis(vm_angles:Right(), rotation.r * fraction)
+
+		client.nutRaisedFrac = Lerp(FrameTime() * 2, client.nutRaisedFrac or 0, value)
 	end
 
-	local fraction = (client.nutRaisedFrac or 0) / 100
-	local rotation = weapon.LowerAngles or LOWERED_ANGLES
-	
-	if (NUT_CVAR_LOWER2:GetBool() and weapon.LowerAngles2) then
-		rotation = weapon.LowerAngles2
-	end
-	
-	eyeAngles:RotateAroundAxis(eyeAngles:Up(), rotation.p * fraction)
-	eyeAngles:RotateAroundAxis(eyeAngles:Forward(), rotation.y * fraction)
-	eyeAngles:RotateAroundAxis(eyeAngles:Right(), rotation.r * fraction)
+	--The original code of the hook.
+	do
+		local func = weapon.GetViewModelPosition
+		if (func) then
+			local pos, ang = func( weapon, eyePos*1, eyeAngles*1 )
+			vm_origin = pos or vm_origin
+			vm_angles = ang or vm_angles
+		end
 
-	client.nutRaisedFrac = Lerp(FrameTime() * 2, client.nutRaisedFrac or 0, value)
-
-	viewModel:SetAngles(eyeAngles)
-
-	if (weapon.GetViewModelPosition) then
-		local position, angles = weapon:GetViewModelPosition(eyePos, eyeAngles)
-
-		oldEyePos = position or oldEyePos
-		eyeAngles = angles or eyeAngles
-	end
-	
-	if (weapon.CalcViewModelView) then
-		local position, angles = weapon:CalcViewModelView(viewModel, oldEyePos, oldEyeAngles, eyePos, eyeAngles)
-
-		oldEyePos = position or oldEyePos
-		eyeAngles = angles or eyeAngles
+		func = weapon.CalcViewModelView
+		if (func) then
+			local pos, ang = func( weapon, viewModel, oldEyePos*1, oldEyeAngles*1, eyePos*1, eyeAngles*1 )
+			vm_origin = pos or vm_origin
+			vm_angles = ang or vm_angles
+		end
 	end
 
-	return oldEyePos, eyeAngles
+	return vm_origin, vm_angles
 end
 
 function GM:LoadIntro()
@@ -396,7 +424,7 @@ function GM:HUDPaintBackground()
 	local frameTime = FrameTime()
 	local scrW, scrH = surface.ScreenWidth(), surface.ScreenHeight()
 
-	if (hasVignetteMaterial) then
+	if (hasVignetteMaterial and nut.config.get("vignette")) then
 		vignetteAlphaDelta = mathApproach(vignetteAlphaDelta, vignetteAlphaGoal, frameTime * 30)
 
 		surface.SetDrawColor(0, 0, 0, 175 + vignetteAlphaDelta)
@@ -410,8 +438,8 @@ function GM:HUDPaintBackground()
 		lastTrace.start = localPlayer.GetShootPos(localPlayer)
 		lastTrace.endpos = lastTrace.start + localPlayer.GetAimVector(localPlayer)*160
 		lastTrace.filter = localPlayer		
-		lastTrace.mins = Vector( -10, -10, -10 )
-		lastTrace.maxs = Vector( 10, 10, 10 )
+		lastTrace.mins = Vector( -4, -4, -4 )
+		lastTrace.maxs = Vector( 4, 4, 4 )
 		lastTrace.mask = MASK_SHOT_HULL
 
 		lastEntity = util.TraceHull(lastTrace).Entity
@@ -657,6 +685,8 @@ function GM:ItemShowEntityMenu(entity)
 	itemTable.entity = entity
 
 	for k, v in SortedPairs(itemTable.functions) do
+		if (k == "combine") then continue end -- yeah, noob protection
+
 		if (v.onCanRun) then
 			if (v.onCanRun(itemTable) == false) then
 				continue
@@ -859,7 +889,7 @@ function GM:PostPlayerDraw(client)
 				local class = v:GetClass():lower()
 				local drawInfo = HOLSTER_DRAWINFO[class]
 
-				if (drawInfo) then
+				if (drawInfo and drawInfo.model) then
 					client.holsteredWeapons = client.holsteredWeapons or {}
 
 					if (!client.holsteredWeapons[class] or !IsValid(client.holsteredWeapons[class])) then

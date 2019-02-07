@@ -26,22 +26,23 @@ function nut.plugin.load(uniqueID, path, isSingleFile, variable)
 
 	_G[variable] = PLUGIN
 	PLUGIN.loading = true
-
+	
 	if (!isSingleFile) then
-		nut.lang.loadFromDir(path.."/languages")
-		nut.util.includeDir(path.."/libs", true)
+		nut.util.includeDir(path.."/libs", true, true)
 		nut.attribs.loadFromDir(path.."/attributes")
 		nut.faction.loadFromDir(path.."/factions")
 		nut.class.loadFromDir(path.."/classes")
 		nut.item.loadFromDir(path.."/items")
-		nut.plugin.loadFromDir(path.."/plugins")
 		nut.util.includeDir(path.."/derma", true)
 		nut.plugin.loadEntities(path.."/entities")
+		nut.lang.loadFromDir(path.."/languages")
+		nut.plugin.loadFromDir(path.."/plugins")
 
 		hook.Run("DoPluginIncludes", path, PLUGIN)
 	end
 	
 	nut.util.include(isSingleFile and path or path.."/sh_"..variable:lower()..".lua", "shared")
+	
 	PLUGIN.loading = false
 
 	local uniqueID2 = uniqueID
@@ -177,9 +178,16 @@ function nut.plugin.initialize()
 	nut.plugin.load("schema", engine.ActiveGamemode().."/schema")
 	hook.Run("InitializedSchema")
 
-	nut.plugin.loadFromDir(engine.ActiveGamemode().."/plugins")
 	nut.plugin.loadFromDir("nutscript/plugins")
+	nut.plugin.loadFromDir(engine.ActiveGamemode().."/plugins")
 	hook.Run("InitializedPlugins")
+	
+	if (SERVER) then
+		timer.Simple(0, function()
+			hook.Run("LoadData")
+			hook.Run("PostLoadData")
+		end)
+	end
 end
 
 function nut.plugin.loadFromDir(directory)

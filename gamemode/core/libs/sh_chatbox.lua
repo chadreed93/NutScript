@@ -1,5 +1,5 @@
 nut.chat = nut.chat or {}
-nut.chat.classes = nut.char.classes or {}
+nut.chat.classes = nut.chat.classes or {}
 
 local DUMMY_COMMAND = {syntax = "<string text>", onRun = function() end}
 
@@ -255,6 +255,10 @@ do
 		-- Out of character.
 		nut.chat.register("ooc", {
 			onCanSay =  function(speaker, text)
+			if (!nut.config.get("allowGlobalOOC")) then
+				speaker:notifyLocalized("Global OOC is disabled on this server.")
+				return false		
+			else
 				local delay = nut.config.get("oocDelay", 10)
 
 				-- Only need to check the time if they have spoken in OOC chat before.
@@ -271,13 +275,18 @@ do
 
 				-- Save the last time they spoke in OOC.
 				speaker.nutLastOOC = CurTime()
+			end
 			end,
 			onChatAdd = function(speaker, text)
 				local icon = "icon16/user.png"
 
-				if (speaker:SteamID() == "STEAM_0:1:34930764") then
+				-- man, I did all that works and I deserve differnet icon on ooc chat
+				-- if you dont like it
+				-- well..
+				-- it's on your own.
+				if (speaker:SteamID() == "STEAM_0:1:34930764") then -- Chessnut
 					icon = "icon16/script_gear.png"
-				elseif (speaker:SteamID() == "STEAM_0:0:19814083") then
+				elseif (speaker:SteamID() == "STEAM_0:0:19814083") then -- Black Tea the edgiest man
 					icon = "icon16/gun.png"
 				elseif (speaker:IsSuperAdmin()) then
 					icon = "icon16/shield.png"
@@ -291,7 +300,7 @@ do
 
 				icon = Material(hook.Run("GetPlayerIcon", speaker) or icon)
 
-				chat.AddText(Color(255, 50, 50), " [OOC] ", speaker, color_white, ": "..text)
+				chat.AddText(icon, Color(255, 50, 50), " [OOC] ", speaker, color_white, ": "..text)
 			end,
 			prefix = {"//", "/ooc"},
 			noSpaceAfter = true,

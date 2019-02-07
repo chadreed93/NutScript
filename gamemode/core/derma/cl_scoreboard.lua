@@ -81,7 +81,7 @@ local PANEL = {}
 
 	function PANEL:Think()
 		if ((self.nextUpdate or 0) < CurTime()) then
-			self.title:SetText(GetConVarString("hostname"))
+			self.title:SetText(nut.config.get("sbTitle", GetHostName()))
 
 			local visible, amount
 
@@ -108,6 +108,11 @@ local PANEL = {}
 
 	function PANEL:addPlayer(client, parent)
 		if (!client:getChar() or !IsValid(parent)) then
+			return
+		end
+	
+		local result = hook.Run("CanDisplayPlayer", client)
+		if (result == false) then
 			return
 		end
 

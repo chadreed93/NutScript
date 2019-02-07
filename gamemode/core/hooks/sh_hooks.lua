@@ -9,7 +9,7 @@ HOLDTYPE_TRANSLATOR["ar2"] = "smg"
 HOLDTYPE_TRANSLATOR["crossbow"] = "shotgun"
 HOLDTYPE_TRANSLATOR["rpg"] = "shotgun"
 HOLDTYPE_TRANSLATOR["slam"] = "normal"
-HOLDTYPE_TRANSLATOR["grenade"] = "normal"
+HOLDTYPE_TRANSLATOR["grenade"] = "grenade"
 HOLDTYPE_TRANSLATOR["fist"] = "normal"
 HOLDTYPE_TRANSLATOR["melee2"] = "melee"
 HOLDTYPE_TRANSLATOR["passive"] = "normal"
@@ -60,8 +60,8 @@ function GM:TranslateActivity(client, act)
 
 			local holdType = IsValid(weapon) and (weapon.HoldType or weapon.GetHoldType(weapon)) or "normal"
 
-			if (!nut.config.get("wepAlwaysRaised") and IsValid(weapon) and !client.isWepRaised(client) and client.OnGround(client)) then
-				holdType = PLAYER_HOLDTYPE_TRANSLATOR[holdType]
+			if (!nut.config.get("wepAlwaysRaised") and IsValid(weapon) and !client.isWepRaised(client) and client:OnGround()) then
+				holdType = PLAYER_HOLDTYPE_TRANSLATOR[holdType] or "passive"
 			end
 
 			local tree = nut.anim.player[holdType]
@@ -260,11 +260,7 @@ function GM:CalcMainActivity(client, velocity)
 	local normalized = normalizeAngle(yaw - eyeAngles[2])
 
 	client.SetPoseParameter(client, "move_yaw", normalized)
-
-	if (CLIENT) then
-		client.SetIK(client, false)
-	end
-
+	
 	local oldSeqOverride = client.CalcSeqOverride
 	local seqIdeal, seqOverride = self.BaseClass.CalcMainActivity(self.BaseClass, client, velocity)
 	--client.CalcSeqOverride is being -1 after this line.
@@ -335,7 +331,11 @@ function GM:CanProperty(client, property, entity)
 end
 
 function GM:PhysgunPickup(client, entity)
-	if (client:IsAdmin()) then
+	if (client:IsSuperAdmin()) then
+		return true
+	end
+	
+	if (client:IsAdmin() and !(entity:IsPlayer() and entity:IsSuperAdmin())) then
 		return true
 	end
 
@@ -409,6 +409,12 @@ end
 
 function GM:CanItemBeTransfered(itemObject, curInv, inventory)
 	if (itemObject and itemObject.isBag) then
+		if (inventory.id != 0 and curInv.id != inventory.id) then
+			if (inventory.vars and inventory.vars.isBag) then
+				return false 
+			end
+		end
+
 		local inventory = nut.item.inventories[itemObject:getData("id")]
 
 		if (inventory) then
@@ -428,3 +434,5 @@ function GM:CanItemBeTransfered(itemObject, curInv, inventory)
 		end
 	end
 end
+
+function GM:ShowHelp() end

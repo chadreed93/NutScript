@@ -85,15 +85,17 @@ function META:setOwner(owner, fullUpdate)
 		return
 	end
 
-	if (SERVER and fullUpdate) then
-		for k, v in ipairs(player.GetAll()) do
-			if (v:getNetVar("char") == owner) then
-				self:sync(v, true)
+	if (SERVER) then
+		if (fullUpdate) then
+			for k, v in ipairs(player.GetAll()) do
+				if (v:getNetVar("char") == owner) then
+					self:sync(v, true)
 
-				break
+					break
+				end
 			end
 		end
-
+		
 		nut.db.query("UPDATE nut_inventories SET _charID = "..owner.." WHERE _invID = "..self:getID())
 	end
 
@@ -296,11 +298,13 @@ function META:getBags()
 
 	for k, v in pairs(self.slots) do
 		for k2, v2 in pairs(v) do
-			local isBag = v2.data.id
+			if (v2.data) then
+				local isBag = v2.data.id
 
-			if (!table.HasValue(invs, isBag)) then
-				if (isBag and isBag != self:getID()) then
-					table.insert(invs, isBag)
+				if (!table.HasValue(invs, isBag)) then
+					if (isBag and isBag != self:getID()) then
+						table.insert(invs, isBag)
+					end
 				end
 			end
 		end
@@ -452,10 +456,6 @@ if (SERVER) then
 					targetInv.slots[x][y] = true
 
 					nut.item.instance(targetInv:getID(), uniqueID, data, x, y, function(item)
-						if (data) then
-							item.data = table.Merge(item.data, data)
-						end
-
 						item.gridX = x
 						item.gridY = y
 

@@ -25,6 +25,8 @@ timer.Simple(0, function()
         nut.db.loadTables()
         nut.log.loadTables()
         
+	    hook.Run("OnDatabaseLoaded")
+        
         MsgC(Color(0, 255, 0), "NutScript has connected to the database.\n")
         MsgC(Color(0, 255, 0), "Database Type: " .. nut.db.module .. ".\n")
     end)
@@ -40,3 +42,19 @@ concommand.Add("nut_setowner", function(client, command, arguments)
         MsgC(Color(255, 0, 0), "** Instead, please install an admin mod and use that instead.\n")
     end
 end)
+
+cvars.AddChangeCallback( "sbox_persist", function( name, old, new )
+
+	-- A timer in case someone tries to rapily change the convar, such as addons with "live typing" or whatever
+	timer.Create( "sbox_persist_change_timer", 1, 1, function()
+		hook.Run( "PersistenceSave", old )
+
+		--game.CleanUpMap() -- Maybe this should be moved to PersistenceLoad?
+		--seriously you just did this for 2 years? fuck off
+		
+		if ( new == "" ) then return end
+
+		hook.Run( "PersistenceLoad", new )
+	end )
+
+end, "sbox_persist_load" )

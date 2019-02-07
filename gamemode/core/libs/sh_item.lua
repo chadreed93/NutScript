@@ -36,10 +36,6 @@ function zeroInv:add(uniqueID, quantity, data)
 			end
 
 			nut.item.instance(0, uniqueID, data, x, y, function(item)
-				if (data) then
-					item.data = table.Merge(item.data, data)
-				end
-
 				self[item:getID()] = item
 			end)
 
@@ -50,19 +46,19 @@ function zeroInv:add(uniqueID, quantity, data)
 	end
 end
 
-function nut.item.instance(index, uniqueID, data, x, y, callback)
+function nut.item.instance(index, uniqueID, itemData, x, y, callback)
 	if (!uniqueID or nut.item.list[uniqueID]) then
 		nut.db.insertTable({
 			_invID = index,
 			_uniqueID = uniqueID,
-			_data = data,
+			_data = itemData,
 			_x = x,
 			_y = y
 		}, function(data, itemID)
 			local item = nut.item.new(uniqueID, itemID)
 
 			if (item) then
-				item.data = (data or {})
+				item.data = itemData or {}
 				item.invID = index
 
 				if (callback) then
@@ -81,11 +77,11 @@ end
 
 function nut.item.registerInv(invType, w, h, isBag)
 	nut.item.inventoryTypes[invType] = {w = w, h = h}
-	
+
 	if (isBag) then
 		nut.item.inventoryTypes[invType].isBag = invType
 	end
-	
+
 	return nut.item.inventoryTypes[invType]
 end
 
@@ -97,8 +93,11 @@ function nut.item.newInv(owner, invType, callback)
 		_charID = owner
 	}, function(data, invID)
 		local inventory = nut.item.createInv(invData.w, invData.h, invID)
-		inventory.invType = invType
-		
+
+		if (invType) then
+			inventory.vars.isBag = invType
+		end
+
 		if (owner and owner > 0) then
 			for k, v in ipairs(player.GetAll()) do
 				if (v:getChar() and v:getChar():getID() == owner) then
@@ -114,6 +113,14 @@ function nut.item.newInv(owner, invType, callback)
 			callback(inventory)
 		end
 	end, "inventories")
+end
+
+function nut.item.get(identifier)
+	return nut.item.base[identifier] or nut.item.list[identifier]
+end
+
+function nut.item.getInv(invID)
+	return nut.item.inventories[invID]
 end
 
 function nut.item.load(path, baseID, isBaseItem)
@@ -134,7 +141,6 @@ function nut.item.register(uniqueID, baseID, isBaseItem, path, luaGenerated)
 
 	if (uniqueID) then
 		ITEM = (isBaseItem and nut.item.base or nut.item.list)[uniqueID] or setmetatable({}, meta)
-			ITEM.name = uniqueID
 			ITEM.desc = "noDesc"
 			ITEM.uniqueID = uniqueID
 			ITEM.base = baseID
@@ -260,7 +266,7 @@ function nut.item.loadFromDir(directory)
 		if (v == "base") then
 			continue
 		end
-		
+
 		for k2, v2 in ipairs(file.Find(directory.."/"..v.."/*.lua", "LUA")) do
 			nut.item.load(directory.."/"..v .. "/".. v2, "base_"..v)
 		end
@@ -297,7 +303,7 @@ do
 	function nut.item.createInv(w, h, id)
 		local inventory = setmetatable({w = w, h = h, id = id, slots = {}, vars = {}}, nut.meta.inventory)
 			nut.item.inventories[id] = inventory
-			
+
 		return inventory
 	end
 
@@ -305,10 +311,12 @@ do
 		if (type(invID) != "number" or invID < 0) then
 			error("Attempt to restore inventory with an invalid ID!")
 		end
-		
+
 		local inventory = nut.item.createInv(w, h, invID)
 
 		nut.db.query("SELECT _itemID, _uniqueID, _data, _x, _y FROM nut_items WHERE _invID = "..invID, function(data)
+			local badItemsUniqueID = {}
+
 			if (data) then
 				local slots = {}
 				local badItems = {}
@@ -323,26 +331,36 @@ do
 							local item2 = nut.item.new(item._uniqueID, itemID)
 
 							if (item2) then
-								item2.data = table.Merge(item2.data, data or {})
+								item2.data = {}
+								if (data) then
+									item2.data = data
+								end
+
 								item2.gridX = x
 								item2.gridY = y
 								item2.invID = invID
-								
+
 								for x2 = 0, item2.width - 1 do
 									for y2 = 0, item2.height - 1 do
 										slots[x + x2] = slots[x + x2] or {}
 										slots[x + x2][y + y2] = item2
 									end
 								end
+
+								if (item2.onRestored) then
+									item2:onRestored(item2, invID)
+								end
 							else
+								badItemsUniqueID[#badItemsUniqueID + 1] = item._uniqueID
 								badItems[#badItems + 1] = itemID
 							end
 						else
+							badItemsUniqueID[#badItemsUniqueID + 1] = item._uniqueID
 							badItems[#badItems + 1] = itemID
 						end
 					end
 				end
-				
+
 				inventory.slots = slots
 
 				if (table.Count(badItems) > 0) then
@@ -351,7 +369,7 @@ do
 			end
 
 			if (callback) then
-				callback(inventory)
+				callback(inventory, badItemsUniqueID)
 			end
 		end)
 	end
@@ -360,7 +378,12 @@ do
 		netstream.Hook("item", function(uniqueID, id, data, invID)
 			local stockItem = nut.item.list[uniqueID]
 			local item = nut.item.new(uniqueID, id)
-			item.data = table.Merge(item.data, data or {})
+
+			item.data = {}
+			if (data) then
+				item.data = data
+			end
+
 			item.invID = invID or 0
 		end)
 
@@ -380,15 +403,20 @@ do
 				inventory.vars = vars
 
 				local x, y
-				
+
 				for k, v in ipairs(slots) do
 					x, y = v[1], v[2]
 
 					inventory.slots[x] = inventory.slots[x] or {}
 
 					local item = nut.item.new(v[3], v[4])
-						item.data = table.Merge(item.data, v[5] or {})
-						item.invID = item.invID or id
+
+					item.data = {}
+					if (v[5]) then
+						item.data = v[5]
+					end
+
+					item.invID = item.invID or id
 					inventory.slots[x][y] = item
 				end
 
@@ -417,9 +445,12 @@ do
 
 				if (panel and panel.panels) then
 					local icon = panel.panels[id]
-					-- what the fuck???
+
 					if (icon) then
-						icon:SetToolTip("Item #"..item.id.."\n"..L("itemInfo", L(item.name), item:getDesc() or ""))
+						icon:SetToolTip(
+							Format(nut.config.itemFormat,
+							item.getName and item:getName() or L(item.name), item:getDesc() or "")
+						)
 					end
 				end
 			end
@@ -438,7 +469,12 @@ do
 				if (inventory) then
 					local item = uniqueID and id and nut.item.new(uniqueID, id) or nil
 					item.invID = invID
-					item.data = data
+
+					item.data = {}
+					-- Let's just be sure about it kk?
+					if (data) then
+						item.data = data
+					end
 
 					inventory.slots[x] = inventory.slots[x] or {}
 					inventory.slots[x][y] = item
@@ -449,16 +485,19 @@ do
 						local icon = panel:addIcon(item.model or "models/props_junk/popcan01a.mdl", x, y, item.width, item.height)
 
 						if (IsValid(icon)) then
-							icon:SetToolTip("Item #"..item.id.."\n"..L("itemInfo", L(item.name), item:getDesc() or ""))
+							icon:SetToolTip(
+								Format(nut.config.itemFormat,
+								item.getName and item:getName() or L(item.name), item:getDesc() or "")
+							)
 							icon.itemID = item.id
-							
+
 							panel.panels[item.id] = icon
 						end
 					end
 				end
 			end
 		end)
-		
+
 		netstream.Hook("invMv", function(invID, itemID, x, y)
 			local inventory = nut.item.inventories[invID]
 			local panel = nut.gui["inv"..invID]
@@ -501,7 +540,7 @@ do
 						end
 					end
 				end
-			end			
+			end
 		end)
 	else
 		function nut.item.loadItemByID(itemIndex, recipientFilter)
@@ -530,7 +569,7 @@ do
 						end
 					end
 				end
-			end) 
+			end)
 		end
 
 		netstream.Hook("invMv", function(client, oldX, oldY, x, y, invID, newInvID)
@@ -600,7 +639,7 @@ do
 			end
 		end)
 
-		netstream.Hook("invAct", function(client, action, item, invID)
+		netstream.Hook("invAct", function(client, action, item, invID, data)
 			local character = client:getChar()
 
 			if (!character) then
@@ -615,11 +654,9 @@ do
 				end
 			end
 
-			if (hook.Run("CanPlayerInteractItem", client, action, item) == false) then
+			if (hook.Run("CanPlayerInteractItem", client, action, item, data) == false) then
 				return
 			end
-
-			hook.Run("OnPlayerInteractItem", client, action, item)
 
 			if (type(item) == "Entity") then
 				if (IsValid(item)) then
@@ -655,31 +692,32 @@ do
 			end
 
 			local callback = item.functions[action]
-
 			if (callback) then
-				if (callback.onCanRun and callback.onCanRun(item) == false) then
+				if (callback.onCanRun and callback.onCanRun(item, data) == false) then
 					item.entity = nil
 					item.player = nil
 
 					return
 				end
-				
+
 				local entity = item.entity
 				local result
-				
+
 				if (item.hooks[action]) then
-					result = item.hooks[action](item)
+					result = item.hooks[action](item, data)
 				end
-				
+
 				if (result == nil) then
-					result = callback.onRun(item)
+					result = callback.onRun(item, data)
 				end
 
 				if (item.postHooks[action]) then
 					-- Posthooks shouldn't override the result from onRun
-					item.postHooks[action](item, result)
+					item.postHooks[action](item, result, data)
 				end
-				
+
+				hook.Run("OnPlayerInteractItem", client, action, item, result, data)
+
 				if (result != false) then
 					if (IsValid(entity)) then
 						entity.nutIsSafe = true
